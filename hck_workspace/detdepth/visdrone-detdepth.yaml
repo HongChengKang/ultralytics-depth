@@ -1,0 +1,13 @@
+# VisDrone2019-DET with teacher pseudo depth (hck_workspace/detdepth/gen_pseudo_depth.py)
+# images/<split>/*.jpg, labels/<split>/*.txt (YOLO boxes), depth/<split>/*.png (uint16 mm, relative depth)
+
+path: /mnt/data2/VisDrone数据集
+train: images/train # 6471 images
+val: images/val # 548 images
+test: images/test # 1610 images
+
+# This local copy keeps only VisDrone pedestrian + people, merged into class 0 (all label files are class 0)
+names:
+  0: person
+
+depth_scale: 1000
