@@ -1,0 +1,10 @@
+# PFV_dataset: person + Fertilizer bag detection with teacher pseudo depth (depth/ already provided 1:1)
+path: /mnt/data2/PFV_dataset
+train: images/train # 8559 images
+val: images/val # 945 images
+
+names:
+  0: person
+  1: Fertilizer bag
+
+depth_scale: 1000 # uint16 PNG value 1000 = 1 meter

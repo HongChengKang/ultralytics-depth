@@ -1,0 +1,11 @@
+# COCO_PF: 2-class detection + teacher pseudo depth (generated into /mnt/data2/COCO_PF/depth/)
+# images/ -> depth/ mapping is done by ultralytics DepthDataset._depth_path_for (same stem, .png)
+path: /mnt/data2/COCO_PF
+train: images/train # 2088 images
+val: images/val # 397 images
+
+names:
+  0: person
+  1: Fertilizer bag
+
+depth_scale: 1000 # uint16 PNG value 1000 = 1 meter
