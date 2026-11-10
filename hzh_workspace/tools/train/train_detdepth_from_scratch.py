@@ -26,7 +26,7 @@ if __name__ == "__main__":
     args = dict(
         data=str(DATA),
         epochs=500,
-        imgsz=768,
+        imgsz=(480,320),
         batch=32,
         device="0",
         warmup_epochs=3.0,

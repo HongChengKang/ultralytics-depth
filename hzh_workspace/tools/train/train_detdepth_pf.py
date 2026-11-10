@@ -31,14 +31,14 @@ if __name__ == "__main__":
     args = dict(
         data=str(DATA),
         epochs=400,
-        imgsz=640,
-        batch=80,  # total batch, 128 per GPU on 2x RTX A6000 (48 GB) -> ~30 GB VRAM per card (ceiling ~384)
+        imgsz=(480,320),
+        batch=96,  # total batch, 128 per GPU on 2x RTX A6000 (48 GB) -> ~30 GB VRAM per card (ceiling ~384)
         device="0",
         warmup_epochs=3.0,
         patience=20,
         lr0=0.001,
         project=str(REPO / "hzh_workspace" / "runs"),
-        name="detdepth_coco_pf",  # v2 正式；v1 旧结果在 runs/detdepth_coco_pf_old
+        name="detdepth_coco_pf_11_2",  # v2 正式；v1 旧结果在 runs/detdepth_coco_pf_old
     )
     args.update((k, smart_value(v)) for k, v in (a.split("=", 1) for a in sys.argv[1:]))
     DetDepthTrainer.depth_weights = str(MC / "yolo26n-depth.pt")  # same as train.py

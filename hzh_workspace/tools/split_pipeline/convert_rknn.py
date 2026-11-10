@@ -28,24 +28,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rknn_infer import IMG_EXTS, Runner, letterbox, postprocess, preprocess  # noqa: E402
 
 
-def build_calibration(src: Path, num: int, batch: int, size: int, work: Path) -> Path:
+def build_calibration(src: Path, num: int, batch: int, hw: tuple, work: Path) -> Path:
     """Write evenly sampled, letterboxed RGB batches as NCHW uint8 .npy and return the dataset.txt listing them."""
     txt = work / "dataset.txt"
+    stamp = work / "calib_meta.txt"  # .calib 目录名不含 imgsz/batch，用指纹避免换尺寸后误复用旧 npy
     files = sorted(f for f in src.iterdir() if f.suffix.lower() in IMG_EXTS)
     num = min(num, len(files)) // batch * batch
-    if txt.exists() and len(txt.read_text().split()) == num // batch:
-        print(f"calibration: reusing {txt}")
+    meta = f"batch={batch} imgsz={hw[0]}x{hw[1]} num={num} src={src}"
+    if txt.exists() and stamp.exists() and stamp.read_text().strip() == meta and len(txt.read_text().split()) == num // batch:
+        print(f"calibration: reusing {txt} ({meta})")
         return txt
     picks = [files[int(i * len(files) / num)] for i in range(num)]
     work.mkdir(parents=True, exist_ok=True)
     lines = []
     for k in range(0, num, batch):
-        rgb = [letterbox(cv2.imread(str(f)), size)[0][:, :, ::-1] for f in picks[k : k + batch]]
+        rgb = [letterbox(cv2.imread(str(f)), hw)[0][:, :, ::-1] for f in picks[k : k + batch]]
         npy = work / f"calib_{k // batch:04d}.npy"
         np.save(npy, np.ascontiguousarray(np.stack(rgb).transpose(0, 3, 1, 2)))
         lines.append(str(npy.resolve()))  # rknn resolves relative entries against the txt's directory
     txt.write_text("\n".join(lines) + "\n")
-    print(f"calibration: {num} images from {src} -> {len(lines)} batches of {batch} in {work}")
+    stamp.write_text(meta + "\n")
+    print(f"calibration: {num} images from {src} -> {len(lines)} batches of {batch} at {hw[1]}x{hw[0]} in {work}")
     return txt
 
 
@@ -58,7 +61,7 @@ def iou_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return inter / (area(a)[:, None] + area(b)[None] - inter + 1e-9)
 
 
-def check(rknn: RKNN, onnx_path: str, src: Path, n: int, batch: int, size: int) -> None:
+def check(rknn: RKNN, onnx_path: str, src: Path, n: int, batch: int, hw: tuple) -> None:
     """Compare simulator detections/box depths with onnxruntime on n images (IoU>=0.5, same class = match)."""
     ref = Runner(onnx_path)
     files = sorted(f for f in src.iterdir() if f.suffix.lower() in IMG_EXTS)
@@ -67,7 +70,7 @@ def check(rknn: RKNN, onnx_path: str, src: Path, n: int, batch: int, size: int) 
     depth_err, conf_err, map_diff = [], [], []
     for k in range(0, n, batch):
         ims = [cv2.imread(str(f)) for f in files[k : k + batch]]
-        x, metas = preprocess(ims, size, batch)
+        x, metas = preprocess(ims, hw, batch)
         o_ref = ref(x)
         sim = [o.astype(np.float32) for o in rknn.inference(inputs=[x], data_format="nhwc")]
         r_onnx, r_sim = postprocess(o_ref, metas), postprocess(sim, metas)
@@ -95,19 +98,19 @@ def check(rknn: RKNN, onnx_path: str, src: Path, n: int, batch: int, size: int) 
 
 def main(opt):
     dims = [d.dim_value for d in onnx.load(opt.onnx).graph.input[0].type.tensor_type.shape.dim]
-    batch, size = dims[0], dims[2]
+    batch, hw = dims[0], (dims[2], dims[3])  # (h, w); square for 640 exports, non-square for e.g. 480x320
     rknn = RKNN(verbose=False)
     rknn.config(mean_values=[[0, 0, 0]], std_values=[[255, 255, 255]], target_platform=opt.platform)
     assert rknn.load_onnx(model=opt.onnx) == 0, "load_onnx failed"
     dataset = None
     if not opt.fp:
-        dataset = build_calibration(Path(opt.dataset), opt.num, batch, size, Path(opt.out).with_suffix(".calib"))
+        dataset = build_calibration(Path(opt.dataset), opt.num, batch, hw, Path(opt.out).with_suffix(".calib"))
     assert rknn.build(do_quantization=not opt.fp, dataset=str(dataset) if dataset else None) == 0, "build failed"
     assert rknn.export_rknn(opt.out) == 0, "export failed"
-    print(f"saved {opt.out} ({'fp16' if opt.fp else 'int8'}, {opt.platform}, batch {batch}, imgsz {size})")
+    print(f"saved {opt.out} ({'fp16' if opt.fp else 'int8'}, {opt.platform}, batch {batch}, imgsz {hw[0]}x{hw[1]})")
     if opt.check:
         assert rknn.init_runtime() == 0, "simulator init failed"
-        check(rknn, opt.onnx, Path(opt.val), opt.check, batch, size)
+        check(rknn, opt.onnx, Path(opt.val), opt.check, batch, hw)
     rknn.release()
 
 

@@ -16,25 +16,29 @@ hzh_workspace/
 ├── train_coco_pf.sh           # ★ COCO_PF 正式配方（检测 yaml + 深度头 teacher 迁移）
 ├── train_pfv_dataset.sh       #   PFV_dataset 正式配方
 ├── train_coco_pf_scratch.sh   #   COCO_PF 纯从零（depth_weights=None，只做对照/冒烟）
+├── train_detdist.sh           # ★ detdist：检测头 + 距离通道（见 docs/detdist.md）
 ├── gen_depth.sh               # ★ 伪深度生成入口（可重复给数据集补 depth）
 ├── env/                       # 运行环境（torch2.4.1+cu121 / ultralytics / onnx / cv2）
 │   ├── pylibs/
 │   └── cfg/                   # YOLO_CONFIG_DIR / MPLCONFIGDIR / TORCH_HOME
-├── configs/                   # 训练 yaml（detdepth_from_scratch / pfv_detdepth / coco_pf_detdepth）
+├── configs/                   # 训练 yaml（detdepth_* / pfv_detdepth / detdist_*；数据集位置见 detdist_dataset.yaml）
+├── libs/                      # 可复用实现（detdist/：head·data·loss·model·trainer，注入式；dist_plan/ 仅是旧权重 re-export）
 ├── tools/                     # 训练 / 导出 / 转换 / 评测 / 伪深度 / split 脚本
-│   ├── train/                 #   train_detdepth_{pf,pfv,from_scratch}.py
-│   ├── data/                  #   gen_pseudo_depth.py
+│   ├── train/                 #   train_detdepth_{pf,pfv,from_scratch}.py / train_detdist.py
+│   ├── data/                  #   gen_pseudo_depth.py / make_dist_labels.py（一步式距离标签）/ make_data_yaml.py
 │   ├── export/                #   pt→onnx（单头 / 任意尺寸 / batch）
 │   ├── convert/               #   onnx→rknn（fp16 / int8 / 混合精度）
-│   ├── eval/                  #   onnxruntime mAP / 逐层量化误差
+│   ├── eval/                  #   onnxruntime mAP / 逐层量化误差 / eval_detdist.py
 │   ├── predict/               #   PT 推理出 preds 文本
-│   └── split_pipeline/        #   拆头导出 + RKNN 转换/推理一条龙
+│   ├── split_pipeline/        #   旧 detdepth 头的拆头导出 + RKNN 一条龙
+│   └── split_pipeline_detdist/ #  detdist 头（12 输出）的同一套流水线
 ├── runs/                      # 训练输出（3 个正式 run）
 ├── logs/                      # 训练/导出日志（历史审计证据）
 ├── depth_gen/                 # 伪深度生成记录（报告/日志/对照图/校验）
+├── docs/                      # 分链路说明（detdist.md）
 ├── models/                    # 导出的 RKNN（fp16 / hybrid / res1280 / misc / split_*）
 ├── weights/                   # 源 ONNX + 校准清单 + 早期 int8
-└── datasets/                  # 板端一致性评测子集（不参与训练）
+└── datasets/                  # 板端一致性评测子集 + 冒烟清单（不参与训练；训练不再需要数据集镜像）
 ```
 
 `archive/` 已于 2026-10-28 删除；`calib/`、`reports/`、`plan_v2/`、`kitti_joint_val/` 此前已清理；
@@ -164,3 +168,33 @@ python3 tools/eval/eval_onnx.py <onnx> <images_dir> <out.txt> [conf] [nms]
 - `runs/` 三个正式 run、`models/` 交付物、`env/` 不要动；删任何东西前先确认没有引用。
 - 训练日志留在 `logs/`，别混进根目录。
 - 目录/训练血缘的详细分析见 [`WORKSPACE_ANALYSIS.md`](WORKSPACE_ANALYSIS.md)。
+
+---
+
+## 8. detdist：检测头 + 多尺度距离通道
+
+独立链路，**不改仓库源码**（yaml 仍写 `Detect`，构造后注入 `DetectDist`）：
+检测头每级加 1×1 conv，`sigmoid` 输出 `d_norm∈[0,1]`、`d_m=d_norm×15`；
+数据读 `/mnt/data2/hzh/PF_11.9/labels_dist` 的 6 列标签（`-1` 为距离 ignore，检测损失照常）；
+`L_dist` 只对正样本且有距离的 anchor 计 Huber(δ=0.1)，λ 默认 0.5。
+
+**数据集只有一个事实来源**：`configs/detdist_dataset.yaml` 的 `dataset_root`。改完跑一次
+`tools/data/make_data_yaml.py`，所有路径跟着变；不再有 `datasets/` 下的训练镜像，也不再往
+数据集里写 `.cache`（`DistDataset` 自定义了 `get_labels`）。
+
+默认参数（`imgsz: 640`、`name: detdist_pf`、`project: runs` …）集中在
+`tools/train/train_detdist.py` 顶部 `DEFAULTS`；`configs/detdist_train.yaml` 只写覆盖项，
+命令行再覆盖；`--dry-run` 可先看最终生效值。
+
+```bash
+P=/home/kang/workspace/projects/yolo-depth/ultralytics-depth/hzh_workspace
+python $P/tools/data/make_data_yaml.py --smoke         # 生成 data yaml + 20/10 张冒烟清单
+python $P/tools/data/make_dist_labels.py --limit 20    # 距离标签（可先小批量试跑）
+python $P/tools/train/train_detdist.py --dry-run       # 只打印参数
+$P/train_detdist.sh start                              # 正式训练（PID→logs/detdist.pid）
+$P/train_detdist.sh tail | stop | status
+python $P/tools/eval/eval_detdist.py --run runs/detdist_pf --baseline runs/detdist_baseline
+```
+
+产物：`runs/<name>/{weights,results.csv,dist_eval.json}`；日志 `logs/detdist_*`；
+标注统计 `stats/detdist/`。入口/配置/统计口径/运维注意见 [`docs/detdist.md`](docs/detdist.md)。

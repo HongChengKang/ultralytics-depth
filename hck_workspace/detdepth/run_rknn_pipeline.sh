@@ -33,11 +33,11 @@
 set -euo pipefail
 
 REPO=/home/kang/workspace/projects/yolo-depth/ultralytics-depth
-PT=${1:-$REPO/hzh_workspace/runs/pfv_detdepth_from_scratch-3/weights/best.pt}
-OUT=${2:-$REPO/hck_workspace/detdepth/export}
+PT=${1:-$REPO/hzh_workspace/runs/detdepth_coco_pf_11_2/weights/best.pt}
+OUT=${2:-$REPO/hzh_workspace/models}
 YOLO_PY=/home/kang/miniforge3/envs/yolo/bin/python       # torch + 本仓库 ultralytics
 RKNN_PY=/home/eav-nanjin/miniforge3/envs/rknn/bin/python # rknn-toolkit2 2.3.2
-D=$REPO/hck_workspace/detdepth
+D=$REPO/hck_workspace
 # 用 run 目录名当产物前缀，例如 pfv_detdepth_from_scratch-3
 NAME=$(basename "$(dirname "$(dirname "$PT")")")
 
@@ -45,13 +45,13 @@ NAME=$(basename "$(dirname "$(dirname "$PT")")")
 PLATFORM=${PLATFORM:-rk3576}
 
 # 量化校准图目录（convert_rknn.py 默认值，此处显式写出便于改路径）
-CALIB_DIR=/mnt/data2/PFV_dataset/images/train
+CALIB_DIR=/mnt/data2/COCO_PF/images/train
 # 精度检查 / 预览用验证集
-VAL_DIR=/mnt/data2/PFV_dataset/images/val
+VAL_DIR=/mnt/data2/COCO_PF/images/val
 
 echo "== 1/4 导出 split ONNX（batch=4，多头 box/cls/score_sum + depth）"
 # 产物: $OUT/${NAME}_split.onnx（与芯片无关，可复用）
-"$YOLO_PY" "$D/export_onnx_split.py" "$PT" "$OUT/${NAME}_split.onnx" --batch 4
+"$YOLO_PY" "$D/export_onnx_split.py" "$PT" "$OUT/${NAME}_split.onnx" --batch 1
 
 echo "== 2/4 转 fp16 RKNN（$PLATFORM，不做量化）+ PC 模拟器精度检查（40 张 val）"
 # 产物: $OUT/${NAME}_split_fp16.rknn
