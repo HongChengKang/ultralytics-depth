@@ -10,8 +10,8 @@ D="$(cd "$(dirname "$0")" && pwd)"
 [ -f "$D/pipeline.env" ] && . "$D/pipeline.env"
 
 PT=${PT:-runs/dist_pf_all/weights/best.pt}; PT=${PT/#\~/$HOME}
-OUT=${OUT:-models/split_pf_11_10_3588}
-PLATFORM=${PLATFORM:-rk3588}
+OUT=${OUT:-models/split_pf_11_11_3576}
+PLATFORM=${PLATFORM:-rk3576}
 BATCH=${BATCH:-1}
 CALIB_DIR=${CALIB_DIR:-/mnt/data2/hzh/PF_11.9/images/train}
 VAL_DIR=${VAL_DIR:-/mnt/data2/hzh/PF_11.9/images/val}

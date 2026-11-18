@@ -37,6 +37,7 @@ sys.path[:0] = [
     str(WS / 'libs'),  # detdist.head.DetectDist（detdist 的 checkpoint pickle 需要它）
 ]
 
+import metdist  # noqa: E402  legacy detdist_v2 pickle aliases
 import torch  # noqa: E402
 
 from ultralytics import YOLO  # noqa: E402
@@ -76,6 +77,18 @@ def split_forward_dist(self, x):
     return tuple(outs)
 
 
+def split_forward_dist_v2(self, x):
+    """DetectDistV2 forward: towers output log-depth; decode exp(clamp(.)) to metres in-graph."""
+    import math
+    lo, hi = math.log(0.2), math.log(DETDIST_MAX_M)
+    outs = []
+    for i in range(self.nl):
+        cls = self.cv3[i](x[i]).sigmoid()
+        outs += [self.cv2[i](x[i]), cls, cls.sum(1, keepdim=True).clamp(0, 1)]
+    outs += [torch.exp(self.dist[i](x[i]).clamp(lo, hi)) for i in range(self.nl)]
+    return tuple(outs)
+
+
 def main(opt):
     model = YOLO(opt.weights).model.float().eval()
     for p in model.parameters():
@@ -83,13 +96,17 @@ def main(opt):
     model = model.fuse()
     head = model.model[-1]
     has_dist = hasattr(head, "dist") and len(getattr(head, "dist")) == len(LEVELS)
-    head.forward = types.MethodType(split_forward_dist if has_dist else split_forward, head)
+    is_v2 = type(head).__name__ == "DetectDistV2"
+    head.forward = types.MethodType(
+        (split_forward_dist_v2 if is_v2 else split_forward_dist) if has_dist else split_forward, head
+    )
     if has_dist:
         for m in model.modules():
             if isinstance(m, Depth):  # 旧头才有的模块；detdist 没有，保险起见
                 m.export = True
         names = [f"{k}_{lv}" for lv in LEVELS for k in ("box", "cls", "score_sum")] + [f"dist_{lv}" for lv in LEVELS]
-        print(f"head: {type(head).__name__} (distance branch x{len(LEVELS)}, d_m = sigmoid * {DETDIST_MAX_M:g})")
+        decode = "exp(clamp(logit))" if is_v2 else f"sigmoid * {DETDIST_MAX_M:g}"
+        print(f"head: {type(head).__name__} (distance branch x{len(LEVELS)}, d_m = {decode})")
     else:
         for m in model.modules():
             if isinstance(m, Depth):

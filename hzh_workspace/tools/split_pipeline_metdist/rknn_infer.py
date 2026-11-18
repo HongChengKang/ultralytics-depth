@@ -15,6 +15,7 @@ original-image pixels).
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import cv2
@@ -68,7 +69,8 @@ def _warn_if_quantized(outs: list) -> None:
               f"zp/scale before using them as metres, or deploy the fp16 model")
 
 
-def postprocess(outs: list, metas: list, conf: float = 0.25, iou: float = 0.7, max_det: int = 300) -> list:
+def postprocess(outs: list, metas: list, conf: float = 0.25, iou: float = 0.7, max_det: int = 300,
+                near_pct: float = 0.0) -> list:
     """Decode per-level box/cls/score_sum outputs, run class-aware NMS, and take each box's median depth.
 
     Args:
@@ -115,7 +117,7 @@ def postprocess(outs: list, metas: list, conf: float = 0.25, iou: float = 0.7, m
         keep = np.array(keep, int).reshape(-1)
         boxes, scores, classes = boxes[keep], scores[keep], classes[keep]
         if dist_maps is not None:
-            d = np.array([box_dist_levels([m[b, 0] for m in dist_maps], bx, (h, w)) for bx in boxes])
+            d = np.array([box_dist_levels([m[b, 0] for m in dist_maps], bx, (h, w), near_pct) for bx in boxes])
         else:
             d = np.array([box_depth(depth[b, 0], bx, (h, w)) for bx in boxes])
         xyxy = (boxes - [left, top, left, top]) / r  # undo letterbox
@@ -124,16 +126,11 @@ def postprocess(outs: list, metas: list, conf: float = 0.25, iou: float = 0.7, m
     return results
 
 
-def box_dist_levels(dmap: list, xyxy: np.ndarray, size) -> float:
-    """Median metric distance (metres) over the P3/P4/P5 anchors whose centres fall inside a letterbox box.
+def box_dist_levels(dmap: list, xyxy: np.ndarray, size, near_pct: float = 0.0) -> float:
+    """Metric distance (metres) over the P3/P4/P5 anchors whose centres fall inside a letterbox box.
 
-    Args:
-        dmap (list[np.ndarray]): three (H_s, W_s) distance maps for strides 8/16/32, already in metres.
-        xyxy (np.ndarray): box in letterbox pixels.
-        size: input size (h, w).
-
-    Returns:
-        float: median distance in metres of all anchors inside the box (0.0 if the box is empty).
+    near_pct > 0: when the median reading is < 5 m, return that percentile of the
+    in-box anchors instead (reads slightly lower, matches the v2 training target).
     """
     h, w = as_hw(size)
     x1, y1, x2, y2 = np.clip(xyxy, 0, [w, h, w, h])
@@ -146,7 +143,12 @@ def box_dist_levels(dmap: list, xyxy: np.ndarray, size) -> float:
         i1 = max(i0 + 1, min(int(np.ceil(y2 / s - 0.5)), gh))
         vals.append(m[i0:i1, j0:j1].ravel())
     v = np.concatenate(vals)
-    return float(np.median(v)) if v.size else 0.0
+    if not v.size:
+        return 0.0
+    med = float(np.median(v))
+    if near_pct > 0 and med < 5.0:
+        return float(np.percentile(v, near_pct))
+    return med
 
 
 def box_depth(depth: np.ndarray, xyxy: np.ndarray, size) -> float:
@@ -213,7 +215,7 @@ def main(opt):
         chunk = files[k : k + run.batch]
         ims = [cv2.imread(str(f)) for f in chunk]
         x, metas = preprocess(ims, run.hw, run.batch)
-        for f, im, res in zip(chunk, ims, postprocess(run(x), metas, opt.conf, opt.iou)):
+        for f, im, res in zip(chunk, ims, postprocess(run(x), metas, opt.conf, opt.iou, near_pct=opt.near_pct)):
             cv2.imwrite(str(out / f"{f.stem}.jpg"), draw(im, res, opt.names))
             rows = zip(res["cls"], res["conf"], res["xyxy"], res["depth"])
             lines = [f"{c} {s:.4f} {b[0]:.1f} {b[1]:.1f} {b[2]:.1f} {b[3]:.1f} {d:.3f}\n" for c, s, b, d in rows]
@@ -231,4 +233,6 @@ if __name__ == "__main__":
     p.add_argument("--batch", type=int, default=0, help="override the model batch size (rknn)")
     p.add_argument("--imgsz", default="", help="override the input size (.rknn 读不到 shape): 640 或 高x宽，如 480x320")
     p.add_argument("--names", nargs="+", default=["person", "Fertilizer bag"])
+    p.add_argument("--near-pct", type=float, default=float(os.environ.get("NEAR_PCT", "0")),
+                   help="in-box anchor percentile when median < 5 m (0 = plain median); v2 推荐 20")
     main(p.parse_args())
