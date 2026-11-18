@@ -1,0 +1,11 @@
+# metdist dataset definition — the ONE place that names the dataset.
+# Change `dataset_root` only; then run tools/data/make_data_yaml.py [--smoke].
+dataset_root: /mnt/data2/hzh/PF_11.9
+
+train_images: images/train
+val_images: images/val
+labels_dist: labels_dist          # 6 columns: cls cx cy w h d_norm
+
+names:
+  0: person
+  1: Fertilizer bag

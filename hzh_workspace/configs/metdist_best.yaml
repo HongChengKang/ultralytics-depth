@@ -1,0 +1,10 @@
+# 当前最优配方 (原 detdist_pf_v2_asym3, 验收: own val 近场 MAE 0.28m / <=0.5m 82%)
+# 从已有最优权重继续微调; 从头训请置 det_weights: ""
+name: metdist_pf
+det_weights: runs/detdist_pf_v2_asym3/weights/last.pt
+epochs: 40
+lr0: 0.002
+patience: 0
+save_period: 10
+dist_tau: 0.25
+dist_near_weight: 3.0

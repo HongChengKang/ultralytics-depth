@@ -1,0 +1,3 @@
+# metdist 薄覆盖文件：默认值在 tools/train/train_metdist.py DEFAULTS。
+# 最优配方见 configs/metdist_best.yaml。
+{}

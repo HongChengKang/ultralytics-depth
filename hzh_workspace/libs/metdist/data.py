@@ -17,6 +17,7 @@ Key points
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -276,3 +277,14 @@ class DistDataset(YOLODataset):
         if "dist" in new_batch:
             new_batch["dist"] = torch.cat(list(new_batch["dist"]), 0)
         return new_batch
+
+class GenDataset(DistDataset):
+    """DistDataset + optional BackgroundSwap (scene-identity breaking, train only)."""
+
+    def build_transforms(self, hyp):
+        transforms = super().build_transforms(hyp)
+        p = float(os.environ.get("DETDIST_V2_BGSWAP", "0"))
+        if self.augment and p > 0:
+            from metdist.augment import BackgroundSwap
+            transforms.transforms.insert(0, BackgroundSwap(self, p=p))
+        return transforms
