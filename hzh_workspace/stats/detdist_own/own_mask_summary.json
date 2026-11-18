@@ -1,0 +1,27 @@
+{
+  "src": "/mnt/data2/hzh/PF_11.9/labels_dist_cal",
+  "dst": "/mnt/data2/hzh/PF_11.9/labels_dist_own",
+  "splits": {
+    "train": {
+      "files": 4034,
+      "own_copied": 2434,
+      "masked_files": 1600,
+      "boxes_masked": 6098,
+      "already_ignore": 263,
+      "own_boxes_kept": 2144,
+      "errors": [],
+      "n_errors": 0
+    },
+    "val": {
+      "files": 600,
+      "own_copied": 323,
+      "masked_files": 277,
+      "boxes_masked": 1088,
+      "already_ignore": 26,
+      "own_boxes_kept": 485,
+      "errors": [],
+      "n_errors": 0
+    }
+  },
+  "all_checks_passed": true
+}

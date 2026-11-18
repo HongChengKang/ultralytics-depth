@@ -1,0 +1,33 @@
+{
+  "all_checks_passed": true,
+  "splits": {
+    "train": {
+      "errors": [],
+      "src_files": 4034,
+      "dst_files": 4034,
+      "files_byte_identical": 2224,
+      "files_transformed": 1810,
+      "lines_checked": 1448,
+      "bad_prefix": 0,
+      "bad_range": 0,
+      "affine_mismatch": 0,
+      "ignore_src": 0,
+      "new_ignore": 4,
+      "max_affine_dev": 4.975845410704061e-07
+    },
+    "val": {
+      "errors": [],
+      "src_files": 600,
+      "dst_files": 600,
+      "files_byte_identical": 351,
+      "files_transformed": 249,
+      "lines_checked": 301,
+      "bad_prefix": 0,
+      "bad_range": 0,
+      "affine_mismatch": 0,
+      "ignore_src": 0,
+      "new_ignore": 1,
+      "max_affine_dev": 4.975845410148949e-07
+    }
+  }
+}
